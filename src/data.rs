@@ -6,7 +6,7 @@ pub struct SpectraBatcher {}
 #[derive(Clone, Debug)]
 pub struct SpectraBatch<B: Backend> {
     pub spectra: Tensor<B, 2>,
-    pub targets: Tensor<B, 2, Bool>,
+    pub targets: Tensor<B, 2, Int>,
 }
 
 pub const BIN_SIZE: usize = 4096;
@@ -32,7 +32,7 @@ impl<B: Backend> Batcher<B, ProcessedSpectrum, SpectraBatch<B>> for SpectraBatch
 
         let targets = items
             .iter()
-            .map(|item| Tensor::<B, 2, Bool>::from_data(item.atom_present, device))
+            .map(|item| Tensor::<B, 2, Int>::from_data(item.atom_present, device))
             .collect();
 
         let spectra = Tensor::cat(spectra, 0);
