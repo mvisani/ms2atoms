@@ -1,0 +1,7 @@
+[package]
+name = "ms2atoms"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+burn = { version = "0.20.1", features = ["metal", "train", "tui", "metrics"] }
