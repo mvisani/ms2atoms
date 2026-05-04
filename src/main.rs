@@ -2,14 +2,14 @@
 mod data;
 mod model;
 mod training;
-use crate::{data::BIN_SIZE, model::ModelConfig};
+use crate::{data::NUMBER_OF_ATOMS, model::ModelConfig};
 use burn::backend::Metal;
 
 fn main() {
     type MyBackend = Metal;
 
     let device = Default::default();
-    let model = ModelConfig::new(10, BIN_SIZE).init::<MyBackend>(&device);
+    let model = ModelConfig::new(NUMBER_OF_ATOMS, 512).init::<MyBackend>(&device, None);
 
     println!("{model}");
 }

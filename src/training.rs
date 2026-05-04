@@ -4,9 +4,7 @@ use burn::nn::loss::BinaryCrossEntropyLossConfig;
 use burn::optim::AdamConfig;
 use burn::prelude::*;
 use burn::tensor::backend::AutodiffBackend;
-use burn::train::{
-    ClassificationOutput, InferenceStep, MultiLabelClassificationOutput, TrainOutput, TrainStep,
-};
+use burn::train::{InferenceStep, MultiLabelClassificationOutput, TrainOutput, TrainStep};
 
 impl<B: Backend> Model<B> {
     pub fn forward_classification(
@@ -16,6 +14,7 @@ impl<B: Backend> Model<B> {
     ) -> MultiLabelClassificationOutput<B> {
         let output = self.forward(spectra);
         let loss = BinaryCrossEntropyLossConfig::new()
+            .with_weights(self.class_weights())
             .init(&output.device())
             .forward(output.clone(), targets.clone());
 
@@ -70,5 +69,6 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
     B::seed(&device, config.seed);
 
     let batcher = SpectraBatcher::default();
+
     todo!()
 }

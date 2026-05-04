@@ -5,3 +5,9 @@ edition = "2024"
 
 [dependencies]
 burn = { version = "0.20.1", features = ["metal", "train", "tui", "metrics"] }
+zenodo-rs = "0.1.6"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+mascot-rs = { git = "https://github.com/LucaCappelletti94/mascot-rs", branch = "main" }
+molecular-formulas = "0.1.9"
+elements_rs = "0.2.7"
+pollster = "0.4"
