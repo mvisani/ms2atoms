@@ -148,7 +148,7 @@ impl<B: Backend> Batcher<B, ProcessedSpectrum, SpectraBatch<B>> for SpectraBatch
 }
 
 pub fn load_processed_spectra() -> Result<Vec<ProcessedSpectrum>, Box<dyn std::error::Error>> {
-    let load = pollster::block_on(MGFVec::<usize, f32>::mass_spec_gym().load())?;
+    let load = pollster::block_on(MGFVec::<f32>::mass_spec_gym().load())?;
     let mut output: Vec<ProcessedSpectrum> = Vec::with_capacity(load.spectra().len());
     for s in load.spectra() {
         let formula_str = s.metadata().arbitrary_metadata_value("FORMULA").unwrap();
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn test_read_mgf() -> Result<()> {
-        let spectra: MGFVec<usize> = MGFVec::from_path("data/clean_spectra.mgf")?;
+        let spectra: MGFVec<f64> = MGFVec::from_path("data/clean_spectra.mgf")?;
         assert_eq!(
             spectra[0].metadata().arbitrary_metadata_value("FORMULA"),
             Some("C15H10ClF3N2O6S")
@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn load_massspecgym() -> Result<()> {
-        let load = pollster::block_on(MGFVec::<usize, f32>::mass_spec_gym().load())?;
+        let load = pollster::block_on(MGFVec::<f32>::mass_spec_gym().load())?;
 
         assert_eq!(load.spectra().len(), super::MASSSPECGYM_SPECTRA);
         let formula = load.spectra()[0]
