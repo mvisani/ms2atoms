@@ -22,7 +22,7 @@ pub struct Model<B: Backend> {
 pub struct ModelConfig {
     num_classes: usize,
     hidden_size: usize,
-    #[config(default = "0.1")]
+    #[config(default = "0.5")]
     dropout: f64,
 }
 

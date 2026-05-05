@@ -1,10 +1,18 @@
-use crate::data::{SpectraBatch, SpectraBatcher};
+use crate::data::{SpectraBatch, SpectraBatcher, get_class_weights, load_processed_spectra};
+use crate::dataset::SpectraDataset;
+use crate::mcc::MatthewsCorrelationMetric;
 use crate::model::{Model, ModelConfig};
+use burn::data::dataloader::DataLoaderBuilder;
 use burn::nn::loss::BinaryCrossEntropyLossConfig;
 use burn::optim::AdamConfig;
 use burn::prelude::*;
+use burn::record::CompactRecorder;
 use burn::tensor::backend::AutodiffBackend;
-use burn::train::{InferenceStep, MultiLabelClassificationOutput, TrainOutput, TrainStep};
+use burn::train::metric::{CpuMemory, CpuTemperature, HammingScore, LossMetric, PrecisionMetric};
+use burn::train::{
+    InferenceStep, Learner, MultiLabelClassificationOutput, SupervisedTraining, TrainOutput,
+    TrainStep,
+};
 
 impl<B: Backend> Model<B> {
     pub fn forward_classification(
@@ -62,6 +70,9 @@ fn create_artifact_dir(artifact_dir: &str) {
 }
 
 pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, device: B::Device) {
+    let vec_of_data = load_processed_spectra().unwrap();
+    let weights = get_class_weights(&vec_of_data);
+
     create_artifact_dir(artifact_dir);
     config
         .save(format!("{artifact_dir}/config.json"))
@@ -70,5 +81,39 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
 
     let batcher = SpectraBatcher::default();
 
-    todo!()
+    let dataloader_train = DataLoaderBuilder::new(batcher.clone())
+        .batch_size(config.batch_size)
+        .shuffle(config.seed)
+        .num_workers(config.num_workers)
+        .build(SpectraDataset::train(config.seed));
+
+    let dataloader_test = DataLoaderBuilder::new(batcher.clone())
+        .batch_size(config.batch_size)
+        .shuffle(config.seed)
+        .num_workers(config.num_workers)
+        .build(SpectraDataset::test(config.seed));
+
+    let training = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
+        .metrics((
+            HammingScore::new(),
+            LossMetric::new(),
+            PrecisionMetric::multilabel(0.5, burn::train::metric::ClassReduction::Macro),
+            PrecisionMetric::multilabel(0.5, burn::train::metric::ClassReduction::Micro),
+            MatthewsCorrelationMetric::new(),
+        ))
+        .with_file_checkpointer(CompactRecorder::new())
+        .num_epochs(config.num_epochs)
+        .summary();
+
+    let model = config.model.init::<B>(&device, Some(weights));
+    let result = training.launch(Learner::new(
+        model,
+        config.optimizer.init(),
+        config.learning_rate,
+    ));
+
+    result
+        .model
+        .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
+        .expect("Trained model should be saved successfully");
 }
