@@ -21,7 +21,7 @@ fn main() {
 
     crate::training::train::<MyAutodiffBackend>(
         artifact_dir,
-        TrainingConfig::new(ModelConfig::new(NUMBER_OF_ATOMS, 512), AdamConfig::new()),
+        TrainingConfig::new(ModelConfig::new(NUMBER_OF_ATOMS, 256), AdamConfig::new()),
         device.clone(),
     );
 }

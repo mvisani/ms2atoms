@@ -12,3 +12,4 @@ molecular-formulas = "0.1.9"
 elements_rs = "0.2.7"
 pollster = "0.4"
 thiserror = "2.0.18"
+rand = { version = "0.10.1", features = ["chacha"] }

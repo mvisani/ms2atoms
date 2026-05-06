@@ -1,4 +1,4 @@
-use crate::data::{SpectraBatch, SpectraBatcher, get_class_weights, load_processed_spectra};
+use crate::data::{SpectraBatch, SpectraBatcher};
 use crate::dataset::SpectraDataset;
 use crate::mcc::MatthewsCorrelationMetric;
 use crate::model::{Model, ModelConfig};
@@ -8,7 +8,7 @@ use burn::optim::AdamConfig;
 use burn::prelude::*;
 use burn::record::CompactRecorder;
 use burn::tensor::backend::AutodiffBackend;
-use burn::train::metric::{CpuMemory, CpuTemperature, HammingScore, LossMetric, PrecisionMetric};
+use burn::train::metric::{HammingScore, LossMetric, PrecisionMetric};
 use burn::train::{
     InferenceStep, Learner, MultiLabelClassificationOutput, SupervisedTraining, TrainOutput,
     TrainStep,
@@ -70,8 +70,7 @@ fn create_artifact_dir(artifact_dir: &str) {
 }
 
 pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, device: B::Device) {
-    let vec_of_data = load_processed_spectra().unwrap();
-    let weights = get_class_weights(&vec_of_data);
+    let dataset = SpectraDataset::new(config.seed);
 
     create_artifact_dir(artifact_dir);
     config
@@ -85,13 +84,13 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
         .batch_size(config.batch_size)
         .shuffle(config.seed)
         .num_workers(config.num_workers)
-        .build(SpectraDataset::train(config.seed));
+        .build(dataset.train());
 
     let dataloader_test = DataLoaderBuilder::new(batcher.clone())
         .batch_size(config.batch_size)
         .shuffle(config.seed)
         .num_workers(config.num_workers)
-        .build(SpectraDataset::test(config.seed));
+        .build(dataset.test());
 
     let training = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
         .metrics((
@@ -105,7 +104,7 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
         .num_epochs(config.num_epochs)
         .summary();
 
-    let model = config.model.init::<B>(&device, Some(weights));
+    let model = config.model.init::<B>(&device, Some(dataset.class_weights));
     let result = training.launch(Learner::new(
         model,
         config.optimizer.init(),
