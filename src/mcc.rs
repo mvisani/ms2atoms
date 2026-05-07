@@ -1,4 +1,5 @@
 use burn::prelude::*;
+use burn::tensor::Transaction;
 use burn::tensor::activation::sigmoid;
 use burn::train::MultiLabelClassificationOutput;
 use burn::train::metric::Adaptor;
@@ -89,41 +90,27 @@ impl<B: Backend> Metric for MatthewsCorrelationMetric<B> {
         // Apply threshold -> predictions {0,1}
         let preds = outputs.greater_elem(self.threshold).int();
 
-        // Flatten tensors for easier processing
-        let preds = preds.reshape([-1]);
-        let targets = targets.reshape([-1]);
+        let preds_iter = preds.iter_dim(0);
+        let targets_iter = targets.iter_dim(0);
 
-        // Move to CPU data
-        let preds_data = preds.to_data();
-        let targets_data = targets.to_data();
+        let mut mcc_sum = 0.0;
+        let mut size = 0;
 
-        let preds_slice = preds_data.as_slice().unwrap();
-        let targets_slice = targets_data.as_slice().unwrap();
-
-        let mut tp: u64 = 0;
-        let mut tn: u64 = 0;
-        let mut fp: u64 = 0;
-        let mut fn_: u64 = 0;
-
-        for (p, t) in preds_slice.iter().zip(targets_slice.iter()) {
-            match (p, t) {
-                (1i64, 1i64) => tp += 1,
-                (0, 0) => tn += 1,
-                (1, 0) => fp += 1,
-                (0, 1) => fn_ += 1,
-                _ => {}
-            }
+        for (p, t) in preds_iter.into_iter().zip(targets_iter.into_iter()) {
+            let [output_data, targets_data] = Transaction::default()
+                .register(p)
+                .register(t)
+                .execute()
+                .try_into()
+                .expect("Correct amount of tensor data");
+            mcc_sum += calculate_mcc(
+                output_data.as_slice().unwrap(),
+                targets_data.as_slice().unwrap(),
+            );
+            size += 1;
         }
 
-        let numerator = (tp * tn) as f64 - (fp * fn_) as f64;
-        let denominator =
-            ((tp + fp) as f64 * (tp + fn_) as f64 * (tn + fp) as f64 * (tn + fn_) as f64).sqrt();
-
-        let mcc = if denominator == 0.0 {
-            0.0
-        } else {
-            numerator / denominator
-        };
+        let mcc: f64 = mcc_sum / (size as f64);
 
         // Update state
         self.state.update(
@@ -132,6 +119,7 @@ impl<B: Backend> Metric for MatthewsCorrelationMetric<B> {
             FormatOptions::new(self.name()).precision(2),
         )
     }
+
     fn clear(&mut self) {
         self.state.reset()
     }
@@ -166,4 +154,32 @@ impl<B: Backend> Adaptor<MCCInput<B>> for MultiLabelClassificationOutput<B> {
             targets: self.targets.clone(),
         }
     }
+}
+
+fn calculate_mcc(predictions: &[i64], targets: &[i64]) -> f64 {
+    let mut tp: u64 = 0;
+    let mut tn: u64 = 0;
+    let mut fp: u64 = 0;
+    let mut fn_: u64 = 0;
+
+    for (p, t) in predictions.iter().zip(targets.iter()) {
+        match (p, t) {
+            (1, 1) => tp += 1,
+            (0, 0) => tn += 1,
+            (1, 0) => fp += 1,
+            (0, 1) => fn_ += 1,
+            _ => {}
+        }
+    }
+
+    let numerator = (tp * tn) as f64 - (fp * fn_) as f64;
+    let denominator =
+        ((tp + fp) as f64 * (tp + fn_) as f64 * (tn + fp) as f64 * (tn + fn_) as f64).sqrt();
+
+    let mcc = if denominator == 0.0 {
+        0.0
+    } else {
+        numerator / denominator
+    };
+    mcc
 }
