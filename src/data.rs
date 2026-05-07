@@ -37,8 +37,8 @@ pub const ELEMENTS: &[Element; 19] = &[
 
 #[derive(Clone, Debug)]
 pub struct ProcessedSpectrum {
-    pub(crate) spectrum: [[f64; BIN_SIZE]; 1],
-    pub(crate) atom_present: [[bool; NUMBER_OF_ATOMS]; 1],
+    pub(crate) spectrum: [f64; BIN_SIZE],
+    pub(crate) atom_present: [bool; NUMBER_OF_ATOMS],
 }
 
 impl<B: Backend> Batcher<B, ProcessedSpectrum, SpectraBatch<B>> for SpectraBatcher {
@@ -50,13 +50,14 @@ impl<B: Backend> Batcher<B, ProcessedSpectrum, SpectraBatch<B>> for SpectraBatch
         let spectra = items
             .iter()
             .map(|item| TensorData::from(item.spectrum).convert::<B::FloatElem>())
-            .map(|data| Tensor::<B, 2>::from_data(data, device))
+            .map(|data| Tensor::<B, 1>::from_data(data, device))
             .map(|tensor| tensor.reshape([1, BIN_SIZE]))
             .collect();
 
         let targets = items
             .iter()
-            .map(|item| Tensor::<B, 2, Int>::from_data(item.atom_present, device))
+            .map(|item| Tensor::<B, 1, Bool>::from_data(item.atom_present, device))
+            .map(|tensor| tensor.reshape([1, NUMBER_OF_ATOMS]).int())
             .collect();
 
         let spectra = Tensor::cat(spectra, 0);
@@ -80,14 +81,14 @@ pub fn load_processed_spectra() -> Result<Vec<ProcessedSpectrum>, Box<dyn std::e
         }
         let formula = formula.unwrap();
         output.push(ProcessedSpectrum {
-            spectrum: [*s
+            spectrum: *s
                 .linear_binned_intensities(0.0, 1000.0, BIN_SIZE)
                 .unwrap()
                 .as_array::<BIN_SIZE>()
-                .unwrap()],
-            atom_present: [*to_binary_vec(formula)
+                .unwrap(),
+            atom_present: *to_binary_vec(formula)
                 .as_array::<NUMBER_OF_ATOMS>()
-                .unwrap()],
+                .unwrap(),
         });
     }
     Ok(output)
@@ -98,7 +99,7 @@ pub fn get_class_weights(data: &[ProcessedSpectrum]) -> Vec<f32> {
     let n = data.len() as f32;
 
     for d in data {
-        for (i, &element_is_present) in d.atom_present[0].iter().enumerate() {
+        for (i, &element_is_present) in d.atom_present.iter().enumerate() {
             if element_is_present {
                 output[i] += 1.0;
             }
@@ -118,6 +119,16 @@ fn to_binary_vec(formula: &ChemicalFormula<u32, i32>) -> [bool; NUMBER_OF_ATOMS]
     for (i, &e) in ELEMENTS.iter().enumerate() {
         if formula.contains_element(e) {
             binary_count[i] = true;
+        }
+    }
+    binary_count
+}
+
+fn to_count_vec(formula: &ChemicalFormula<u32, i32>) -> [i32; NUMBER_OF_ATOMS] {
+    let mut binary_count = [0; NUMBER_OF_ATOMS];
+    for (i, &e) in ELEMENTS.iter().enumerate() {
+        if formula.contains_element(e) {
+            binary_count[i] += formula.count_of_element::<u32>(e).unwrap() as i32
         }
     }
     binary_count
