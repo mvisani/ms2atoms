@@ -24,6 +24,7 @@ pub struct ModelConfig {
     hidden_size: usize,
     #[config(default = "0.5")]
     dropout: f64,
+    class_weights: Option<Vec<f32>>,
 }
 
 impl ModelConfig {
@@ -41,8 +42,12 @@ impl ModelConfig {
             dropout: DropoutConfig::new(self.dropout).init(),
             activation: Sigmoid::new(),
             inner_activation: Relu::new(),
-            class_weights: class_weights,
+            class_weights,
         }
+    }
+
+    pub fn class_weights(&self) -> Option<Vec<f32>> {
+        self.class_weights.clone()
     }
 }
 

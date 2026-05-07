@@ -69,9 +69,12 @@ fn create_artifact_dir(artifact_dir: &str) {
     std::fs::create_dir_all(artifact_dir).ok();
 }
 
-pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, device: B::Device) {
-    let dataset = SpectraDataset::new(config.seed);
-
+pub fn train<B: AutodiffBackend>(
+    artifact_dir: &str,
+    dataset: &SpectraDataset,
+    config: TrainingConfig,
+    device: B::Device,
+) {
     create_artifact_dir(artifact_dir);
     config
         .save(format!("{artifact_dir}/config.json"))
@@ -84,27 +87,29 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
         .batch_size(config.batch_size)
         .shuffle(config.seed)
         .num_workers(config.num_workers)
-        .build(dataset.train());
+        .build(dataset.train(config.seed));
 
     let dataloader_test = DataLoaderBuilder::new(batcher.clone())
         .batch_size(config.batch_size)
         .shuffle(config.seed)
         .num_workers(config.num_workers)
-        .build(dataset.test());
+        .build(dataset.test(config.seed));
 
     let training = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
         .metrics((
-            HammingScore::new(),
+            MatthewsCorrelationMetric::new(),
             LossMetric::new(),
             PrecisionMetric::multilabel(0.5, burn::train::metric::ClassReduction::Macro),
             PrecisionMetric::multilabel(0.5, burn::train::metric::ClassReduction::Micro),
-            MatthewsCorrelationMetric::new(),
+            HammingScore::new(),
         ))
         .with_file_checkpointer(CompactRecorder::new())
         .num_epochs(config.num_epochs)
         .summary();
 
-    let model = config.model.init::<B>(&device, Some(dataset.class_weights));
+    let model = config
+        .model
+        .init::<B>(&device, Some(dataset.class_weights.clone()));
     let result = training.launch(Learner::new(
         model,
         config.optimizer.init(),

@@ -7,15 +7,20 @@ use rand::rngs::ChaCha8Rng;
 use crate::data::{ProcessedSpectrum, get_class_weights, load_processed_spectra};
 
 pub struct SpectraDataset {
-    dataset: Vec<ProcessedSpectrum>,
+    pub(crate) dataset: Vec<ProcessedSpectrum>,
     pub(crate) class_weights: Vec<f32>,
 }
 
 impl SpectraDataset {
     /// Creates a new train dataset.
-    pub fn train(&self) -> Self {
-        let len = self.dataset.len();
-        let Some(subset) = self.dataset.get(0..(len * 8 / 10)) else {
+    pub fn train(&self, seed: u64) -> Self {
+        let mut vec_of_data = self.dataset.clone();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+
+        vec_of_data.shuffle(&mut rng);
+
+        let len = vec_of_data.len();
+        let Some(subset) = vec_of_data.get(0..(len * 8 / 10)) else {
             unreachable!("There was a problem subsetting the vector")
         };
 
@@ -26,8 +31,13 @@ impl SpectraDataset {
     }
 
     /// Creates a new test dataset.
-    pub fn test(&self) -> Self {
-        let len = self.dataset.len();
+    pub fn test(&self, seed: u64) -> Self {
+        let mut vec_of_data = self.dataset.clone();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+
+        vec_of_data.shuffle(&mut rng);
+
+        let len = vec_of_data.len();
         let Some(subset) = self.dataset.get((len * 8 / 10)..len) else {
             unreachable!("There was a problem subsetting the vector")
         };
@@ -38,12 +48,9 @@ impl SpectraDataset {
         }
     }
 
-    pub fn new(seed: u64) -> Self {
-        let mut vec_of_data = load_processed_spectra().unwrap();
+    pub fn new() -> Self {
+        let vec_of_data = load_processed_spectra().unwrap();
         let weights = get_class_weights(&vec_of_data);
-        let mut rng = ChaCha8Rng::seed_from_u64(seed);
-
-        vec_of_data.shuffle(&mut rng);
 
         Self {
             dataset: vec_of_data,

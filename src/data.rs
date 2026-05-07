@@ -37,8 +37,8 @@ pub const ELEMENTS: &[Element; 19] = &[
 
 #[derive(Clone, Debug)]
 pub struct ProcessedSpectrum {
-    spectrum: [[f64; BIN_SIZE]; 1],
-    atom_present: [[bool; NUMBER_OF_ATOMS]; 1],
+    pub(crate) spectrum: [[f64; BIN_SIZE]; 1],
+    pub(crate) atom_present: [[bool; NUMBER_OF_ATOMS]; 1],
 }
 
 impl<B: Backend> Batcher<B, ProcessedSpectrum, SpectraBatch<B>> for SpectraBatcher {

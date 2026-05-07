@@ -1,10 +1,16 @@
 #![recursion_limit = "256"]
+
 mod data;
+mod inference;
 mod mcc;
-// mod metric;
 mod model;
 mod training;
-use crate::{data::NUMBER_OF_ATOMS, model::ModelConfig, training::TrainingConfig};
+use crate::{
+    data::{NUMBER_OF_ATOMS, get_class_weights},
+    dataset::SpectraDataset,
+    model::ModelConfig,
+    training::TrainingConfig,
+};
 use burn::{
     backend::{Autodiff, Metal},
     optim::AdamConfig,
@@ -19,9 +25,16 @@ fn main() {
     let device = burn::backend::wgpu::WgpuDevice::default();
     let artifact_dir = "./first_attempt";
 
+    let dataset = SpectraDataset::new();
+    let model_config = ModelConfig::new(NUMBER_OF_ATOMS, 512)
+        .with_class_weights(Some(dataset.class_weights.clone()));
+
     crate::training::train::<MyAutodiffBackend>(
         artifact_dir,
-        TrainingConfig::new(ModelConfig::new(NUMBER_OF_ATOMS, 256), AdamConfig::new()),
+        &dataset,
+        TrainingConfig::new(model_config, AdamConfig::new()),
         device.clone(),
     );
+
+    crate::inference::infer::<MyBackend>(artifact_dir, device, dataset.dataset[0].clone());
 }
