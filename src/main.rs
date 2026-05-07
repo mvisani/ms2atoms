@@ -6,10 +6,7 @@ mod mcc;
 mod model;
 mod training;
 use crate::{
-    data::{NUMBER_OF_ATOMS, get_class_weights},
-    dataset::SpectraDataset,
-    model::ModelConfig,
-    training::TrainingConfig,
+    data::NUMBER_OF_ATOMS, dataset::SpectraDataset, model::ModelConfig, training::TrainingConfig,
 };
 use burn::{
     backend::{Autodiff, Metal},
@@ -25,8 +22,10 @@ fn main() {
     let device = burn::backend::wgpu::WgpuDevice::default();
     let artifact_dir = "./first_attempt";
 
+    println!("Loading spectra.");
     let dataset = SpectraDataset::new();
-    let model_config = ModelConfig::new(NUMBER_OF_ATOMS, 512)
+    println!("Finished loading spectra");
+    let model_config = ModelConfig::new(NUMBER_OF_ATOMS, 256)
         .with_class_weights(Some(dataset.class_weights.clone()));
 
     crate::training::train::<MyAutodiffBackend>(
