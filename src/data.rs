@@ -2,6 +2,8 @@ use burn::{data::dataloader::batcher::Batcher, prelude::*};
 use mascot_rs::{mascot_generic_format::MGFVec, prelude::Spectrum};
 use molecular_formulas::prelude::*;
 
+use crate::error::TrainingError;
+
 #[derive(Clone, Default)]
 pub struct SpectraBatcher {}
 
@@ -67,7 +69,7 @@ impl<B: Backend> Batcher<B, ProcessedSpectrum, SpectraBatch<B>> for SpectraBatch
     }
 }
 
-pub fn load_processed_spectra() -> Result<Vec<ProcessedSpectrum>, Box<dyn std::error::Error>> {
+pub fn load_processed_spectra() -> Result<Vec<ProcessedSpectrum>, TrainingError> {
     let load = pollster::block_on(
         MGFVec::<f64>::annotated_ms2()
             .target_directory("data")
@@ -75,18 +77,16 @@ pub fn load_processed_spectra() -> Result<Vec<ProcessedSpectrum>, Box<dyn std::e
     )?;
     let mut output: Vec<ProcessedSpectrum> = Vec::with_capacity(load.spectra().len());
     for s in load.spectra() {
-        let formula = s.metadata().formula();
-        if formula.is_none() {
+        let Some(formula) = s.metadata().formula() else {
             continue;
-        }
-        let formula = formula.unwrap();
+        };
+
         output.push(ProcessedSpectrum {
             spectrum: *s
-                .linear_binned_intensities(0.0, 1000.0, BIN_SIZE)
-                .unwrap()
+                .linear_binned_intensities(0.0, 1000.0, BIN_SIZE)?
                 .as_array::<BIN_SIZE>()
                 .unwrap(),
-            atom_present: *to_binary_vec(formula)
+            atom_present: *to_binary_vec(formula)?
                 .as_array::<NUMBER_OF_ATOMS>()
                 .unwrap(),
         });
@@ -114,22 +114,26 @@ pub fn get_class_weights(data: &[ProcessedSpectrum]) -> Vec<f32> {
     output
 }
 
-fn to_binary_vec(formula: &ChemicalFormula<u32, i32>) -> [bool; NUMBER_OF_ATOMS] {
+fn to_binary_vec(
+    formula: &ChemicalFormula<u32, i32>,
+) -> Result<[bool; NUMBER_OF_ATOMS], TrainingError> {
     let mut binary_count = [false; NUMBER_OF_ATOMS];
     for (i, &e) in ELEMENTS.iter().enumerate() {
         if formula.contains_element(e) {
             binary_count[i] = true;
         }
     }
-    binary_count
+    Ok(binary_count)
 }
 
-fn to_count_vec(formula: &ChemicalFormula<u32, i32>) -> [i32; NUMBER_OF_ATOMS] {
+fn to_count_vec(
+    formula: &ChemicalFormula<u32, i32>,
+) -> Result<[i32; NUMBER_OF_ATOMS], TrainingError> {
     let mut binary_count = [0; NUMBER_OF_ATOMS];
     for (i, &e) in ELEMENTS.iter().enumerate() {
         if formula.contains_element(e) {
-            binary_count[i] += formula.count_of_element::<u32>(e).unwrap() as i32
+            binary_count[i] += formula.count_of_element::<u32>(e)? as i32
         }
     }
-    binary_count
+    Ok(binary_count)
 }

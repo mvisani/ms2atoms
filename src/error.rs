@@ -1,7 +1,10 @@
 //! Error handling for the Burn training CLI.
 
-use std::path::PathBuf;
+use mascot_rs::error::MascotError;
 
+use mass_spectrometry::structs::SimilarityComputationError;
+use molecular_formulas::errors::{CountError, NumericError, ParserError};
+use std::path::PathBuf;
 use thiserror::Error;
 
 /// Top-level error for training data loading, model training, and evaluation.
@@ -19,4 +22,19 @@ pub enum TrainingError {
     /// Burn training or recording failed.
     #[error("burn training failed: {0}")]
     Burn(String),
+    /// MolecularFormula Count error
+    #[error(transparent)]
+    MolecularFormulaCount(#[from] CountError),
+    /// MolecularFormula Numeric error
+    #[error(transparent)]
+    MolecularFormulaNumeric(#[from] NumericError),
+    /// MolecularFormula parse error
+    #[error(transparent)]
+    MolecularFormulaParse(#[from] ParserError),
+    /// Mascot-rs error
+    #[error(transparent)]
+    Mascot(#[from] MascotError),
+    /// Mass-spec traits similarity computation errors
+    #[error(transparent)]
+    MassSpecTraitSimilarityComputation(#[from] SimilarityComputationError),
 }

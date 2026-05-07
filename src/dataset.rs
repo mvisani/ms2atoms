@@ -4,7 +4,10 @@ use rand::seq::SliceRandom;
 use burn::data::dataset::Dataset;
 use rand::rngs::ChaCha8Rng;
 
-use crate::data::{ProcessedSpectrum, get_class_weights, load_processed_spectra};
+use crate::{
+    data::{ProcessedSpectrum, get_class_weights, load_processed_spectra},
+    error::TrainingError,
+};
 
 pub struct SpectraDataset {
     pub(crate) dataset: Vec<ProcessedSpectrum>,
@@ -48,14 +51,14 @@ impl SpectraDataset {
         }
     }
 
-    pub fn new() -> Self {
-        let vec_of_data = load_processed_spectra().unwrap();
+    pub fn new() -> Result<Self, TrainingError> {
+        let vec_of_data = load_processed_spectra()?;
         let weights = get_class_weights(&vec_of_data);
 
-        Self {
+        Ok(Self {
             dataset: vec_of_data,
             class_weights: weights,
-        }
+        })
     }
 }
 
