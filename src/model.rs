@@ -14,7 +14,7 @@ pub struct Model<B: Backend> {
     linear3: Linear<B>,
     dropout: Dropout,
     inner_activation: Relu,
-    activation: Sigmoid,
+    pub(crate) activation: Sigmoid,
     class_weights: Option<Vec<f32>>,
 }
 
@@ -55,7 +55,7 @@ impl<B: Backend> Model<B> {
     /// # Shapes
     ///   - Spectra [batch_size, binned_spectrum_size]
     ///   - Output [batch_size, num_classes]
-    pub fn forward(&self, spectra: Tensor<B, 2>) -> Tensor<B, 2> {
+    pub fn forward_logit(&self, spectra: Tensor<B, 2>) -> Tensor<B, 2> {
         let [batch_size, binned_spectrum_size] = spectra.dims();
 
         let x = spectra.reshape([batch_size, binned_spectrum_size]);
@@ -68,7 +68,12 @@ impl<B: Backend> Model<B> {
         let x = self.dropout.forward(x);
         let x = self.batch_norm2.forward(x);
         let x = self.linear3.forward(x);
-        self.activation.forward(x)
+        x
+    }
+
+    pub fn forward(&self, spectra: Tensor<B, 2>) -> Tensor<B, 2> {
+        let logits = self.forward_logit(spectra);
+        self.activation.forward(logits)
     }
 
     pub(crate) fn class_weights(&self) -> Option<Vec<f32>> {

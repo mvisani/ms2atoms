@@ -72,7 +72,10 @@ impl<B: Backend> Default for MatthewsCorrelationMetric<B> {
     }
 }
 
-impl<B: Backend> Metric for MatthewsCorrelationMetric<B> {
+impl<B: Backend> Metric for MatthewsCorrelationMetric<B>
+where
+    B::FloatElem: Into<f64>,
+{
     type Input = MCCInput<B>;
     fn update(
         &mut self,
@@ -88,33 +91,36 @@ impl<B: Backend> Metric for MatthewsCorrelationMetric<B> {
         }
 
         // Apply threshold -> predictions {0,1}
-        let preds = outputs.greater_elem(self.threshold).int();
+        let preds_f = outputs.greater_elem(self.threshold).float();
 
-        let preds_iter = preds.iter_dim(0);
-        let targets_iter = targets.iter_dim(0);
+        let targets_f = targets.float();
 
-        let mut mcc_sum = 0.0;
-        let mut size = 0;
+        let ones = Tensor::<B, 2>::ones_like(&preds_f);
 
-        for (p, t) in preds_iter.into_iter().zip(targets_iter.into_iter()) {
-            let [output_data, targets_data] = Transaction::default()
-                .register(p)
-                .register(t)
-                .execute()
-                .try_into()
-                .expect("Correct amount of tensor data");
-            mcc_sum += calculate_mcc(
-                output_data.as_slice().unwrap(),
-                targets_data.as_slice().unwrap(),
-            );
-            size += 1;
-        }
+        let tp = (preds_f.clone() * targets_f.clone()).sum_dim(1);
 
-        let mcc: f64 = mcc_sum / (size as f64);
+        let tn = ((ones.clone() - preds_f.clone()) * (ones.clone() - targets_f.clone())).sum_dim(1);
+
+        let fp = (preds_f.clone() * (ones.clone() - targets_f.clone())).sum_dim(1);
+
+        let fn_ = ((ones - preds_f) * targets_f).sum_dim(1);
+
+        let numerator = tp.clone() * tn.clone() - fp.clone() * fn_.clone();
+
+        let denominator = ((tp.clone() + fp.clone())
+            * (tp.clone() + fn_.clone())
+            * (tn.clone() + fp)
+            * (tn + fn_))
+            .sqrt();
+
+        let mcc = numerator / denominator.clamp_min(1e-12);
+
+        // Average batch MCC
+        let mcc_value = mcc.mean().into_scalar();
 
         // Update state
         self.state.update(
-            mcc,
+            mcc_value.into(),
             batch_size,
             FormatOptions::new(self.name()).precision(2),
         )
@@ -130,7 +136,7 @@ impl<B: Backend> Metric for MatthewsCorrelationMetric<B> {
 
     fn attributes(&self) -> burn::train::metric::MetricAttributes {
         NumericAttributes {
-            unit: Some("".to_string()),
+            unit: None,
             higher_is_better: true,
         }
         .into()
@@ -154,32 +160,4 @@ impl<B: Backend> Adaptor<MCCInput<B>> for MultiLabelClassificationOutput<B> {
             targets: self.targets.clone(),
         }
     }
-}
-
-fn calculate_mcc(predictions: &[i64], targets: &[i64]) -> f64 {
-    let mut tp: u64 = 0;
-    let mut tn: u64 = 0;
-    let mut fp: u64 = 0;
-    let mut fn_: u64 = 0;
-
-    for (p, t) in predictions.iter().zip(targets.iter()) {
-        match (p, t) {
-            (1, 1) => tp += 1,
-            (0, 0) => tn += 1,
-            (1, 0) => fp += 1,
-            (0, 1) => fn_ += 1,
-            _ => {}
-        }
-    }
-
-    let numerator = (tp * tn) as f64 - (fp * fn_) as f64;
-    let denominator =
-        ((tp + fp) as f64 * (tp + fn_) as f64 * (tn + fp) as f64 * (tn + fn_) as f64).sqrt();
-
-    let mcc = if denominator == 0.0 {
-        0.0
-    } else {
-        numerator / denominator
-    };
-    mcc
 }

@@ -39,7 +39,7 @@ pub const ELEMENTS: &[Element; 19] = &[
 
 #[derive(Clone, Debug)]
 pub struct ProcessedSpectrum {
-    pub(crate) spectrum: [f64; BIN_SIZE],
+    pub(crate) spectrum: [f32; BIN_SIZE],
     pub(crate) atom_present: [bool; NUMBER_OF_ATOMS],
 }
 
@@ -51,14 +51,13 @@ impl<B: Backend> Batcher<B, ProcessedSpectrum, SpectraBatch<B>> for SpectraBatch
     ) -> SpectraBatch<B> {
         let spectra = items
             .iter()
-            .map(|item| TensorData::from(item.spectrum).convert::<B::FloatElem>())
-            .map(|data| Tensor::<B, 1>::from_data(data, device))
+            .map(|data| Tensor::<B, 1>::from_floats(data.spectrum, device))
             .map(|tensor| tensor.reshape([1, BIN_SIZE]))
             .collect();
 
         let targets = items
             .iter()
-            .map(|item| Tensor::<B, 1, Bool>::from_data(item.atom_present, device))
+            .map(|item| Tensor::<B, 1, Bool>::from_bool(item.atom_present.into(), device))
             .map(|tensor| tensor.reshape([1, NUMBER_OF_ATOMS]).int())
             .collect();
 
@@ -71,7 +70,7 @@ impl<B: Backend> Batcher<B, ProcessedSpectrum, SpectraBatch<B>> for SpectraBatch
 
 pub fn load_processed_spectra() -> Result<Vec<ProcessedSpectrum>, TrainingError> {
     let load = pollster::block_on(
-        MGFVec::<f64>::annotated_ms2()
+        MGFVec::<f32>::annotated_ms2()
             .target_directory("data")
             .load(),
     )?;
@@ -96,7 +95,8 @@ pub fn load_processed_spectra() -> Result<Vec<ProcessedSpectrum>, TrainingError>
 
 pub fn get_class_weights(data: &[ProcessedSpectrum]) -> Vec<f32> {
     let mut output: Vec<f32> = vec![0.0; NUMBER_OF_ATOMS];
-    let n = data.len() as f32;
+    let n_samples = data.len() as f32;
+    let n_classes = NUMBER_OF_ATOMS as f32;
 
     for d in data {
         for (i, &element_is_present) in d.atom_present.iter().enumerate() {
@@ -107,8 +107,7 @@ pub fn get_class_weights(data: &[ProcessedSpectrum]) -> Vec<f32> {
     }
 
     for weight in output.iter_mut() {
-        let freq = *weight / n; // frequency in [0, 1]
-        *weight = (1.0 - freq).max(1e-6); // stays in [0, 1]
+        *weight = n_samples / (*weight * n_classes);
     }
 
     output
@@ -136,4 +135,29 @@ fn to_count_vec(
         }
     }
     Ok(binary_count)
+}
+
+#[cfg(test)]
+mod tests {
+    use burn::prelude::*;
+    use burn::{Tensor, backend::Metal};
+    #[test]
+    fn example() {
+        type MyBackend = Metal<f32, i32>;
+        let device = Default::default();
+        let bool_tensor =
+            Tensor::<MyBackend, 1, Bool>::from_bool([true, false, true].into(), &device);
+        let int_tensor = bool_tensor.int();
+        println!("{int_tensor}"); // [1, 0, 1]
+    }
+
+    #[test]
+    fn example_2() {
+        type MyBackend = Metal<f32, i32>;
+        let device = Default::default();
+        let tensor = Tensor::<MyBackend, 2>::from_data([[3.0]], &device);
+        // Convert the tensor with a single element into a scalar.
+        let scalar = tensor.into_scalar();
+        println!("{scalar}");
+    }
 }

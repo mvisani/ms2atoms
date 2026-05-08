@@ -8,7 +8,7 @@ use burn::optim::AdamConfig;
 use burn::prelude::*;
 use burn::record::CompactRecorder;
 use burn::tensor::backend::AutodiffBackend;
-use burn::train::metric::{HammingScore, LossMetric, PrecisionMetric};
+use burn::train::metric::{HammingScore, LossMetric};
 use burn::train::{
     InferenceStep, Learner, MultiLabelClassificationOutput, SupervisedTraining, TrainOutput,
     TrainStep,
@@ -20,13 +20,17 @@ impl<B: Backend> Model<B> {
         spectra: Tensor<B, 2>,
         targets: Tensor<B, 2, Int>,
     ) -> MultiLabelClassificationOutput<B> {
-        let output = self.forward(spectra);
-        let loss = BinaryCrossEntropyLossConfig::new()
+        let logits = self.forward_logit(spectra);
+        let loss_bce = BinaryCrossEntropyLossConfig::new()
+            .with_logits(true)
             .with_weights(self.class_weights())
-            .init(&output.device())
-            .forward(output.clone(), targets.clone());
+            .init(&logits.device())
+            .forward(logits.clone(), targets.clone());
 
-        MultiLabelClassificationOutput::new(loss, output, targets)
+        let lambda = 1e-4;
+        let logit_reg = logits.clone().powf_scalar(2.0).mean();
+        let loss = loss_bce + logit_reg * lambda;
+        MultiLabelClassificationOutput::new(loss, self.activation.forward(logits), targets)
     }
 }
 
@@ -99,8 +103,6 @@ pub fn train<B: AutodiffBackend>(
         .metrics((
             MatthewsCorrelationMetric::new(),
             LossMetric::new(),
-            PrecisionMetric::multilabel(0.5, burn::train::metric::ClassReduction::Macro),
-            PrecisionMetric::multilabel(0.5, burn::train::metric::ClassReduction::Micro),
             HammingScore::new(),
         ))
         .with_file_checkpointer(CompactRecorder::new())
