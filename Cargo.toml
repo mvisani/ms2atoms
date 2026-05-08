@@ -13,3 +13,5 @@ pollster = "0.4"
 thiserror = "2.0.18"
 rand = { version = "0.10.1", features = ["chacha"] }
 mass_spectrometry = { git = "https://github.com/earth-metabolome-initiative/mass-spectrometry-traits" }
+serde = "1.0.228"
+csv = "1.4.0"

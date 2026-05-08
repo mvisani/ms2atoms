@@ -5,16 +5,20 @@ mod inference;
 mod mcc;
 mod model;
 mod training;
+use std::fs::File;
+
 use crate::{
-    data::NUMBER_OF_ATOMS, dataset::SpectraDataset, error::TrainingError, model::ModelConfig,
-    training::TrainingConfig,
+    data::NUMBER_OF_ATOMS, dataset::SpectraDataset, error::TrainingError,
+    inference::create_confusion_matrices, model::ModelConfig, training::TrainingConfig,
 };
 use burn::{
     backend::{Autodiff, Metal},
     optim::AdamConfig,
 };
+use csv::Writer;
 mod dataset;
 mod error;
+mod output;
 
 fn main() -> Result<(), TrainingError> {
     type MyBackend = Metal<f32, i32>;
@@ -36,6 +40,17 @@ fn main() -> Result<(), TrainingError> {
         device.clone(),
     );
 
-    crate::inference::infer::<MyBackend>(artifact_dir, device, dataset.dataset[0].clone());
+    let results =
+        crate::inference::infer::<MyBackend>(artifact_dir, device, dataset.test(42).dataset);
+
+    let confusion_matrices = create_confusion_matrices(results, dataset.test(42).dataset, 0.5);
+
+    let file = File::create("results.csv")?;
+    let mut wtr = Writer::from_writer(file);
+    for matrix in confusion_matrices {
+        wtr.serialize(matrix).unwrap();
+    }
+
+    wtr.flush()?;
     Ok(())
 }
