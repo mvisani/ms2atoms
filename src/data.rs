@@ -1,5 +1,6 @@
 use burn::{data::dataloader::batcher::Batcher, prelude::*};
 use mascot_rs::{mascot_generic_format::MGFVec, prelude::Spectrum};
+use mass_spectrometry::traits::SpectrumAlloc;
 use molecular_formulas::prelude::*;
 
 use crate::error::TrainingError;
@@ -13,9 +14,10 @@ pub struct SpectraBatch<B: Backend> {
     pub targets: Tensor<B, 2, Int>,
 }
 
-pub const BIN_SIZE: usize = 8192;
+pub const TOP_K_PEAKS: usize = 64;
+pub const BIN_SIZE: usize = 1000;
 pub const NUMBER_OF_ATOMS: usize = ELEMENTS.len();
-pub const ELEMENTS: &[Element; 19] = &[
+pub const ELEMENTS: &[Element; 18] = &[
     Element::H,
     Element::B,
     Element::C,
@@ -23,7 +25,6 @@ pub const ELEMENTS: &[Element; 19] = &[
     Element::O,
     Element::F,
     Element::Na,
-    Element::Mg,
     Element::Si,
     Element::P,
     Element::S,
@@ -39,7 +40,7 @@ pub const ELEMENTS: &[Element; 19] = &[
 
 #[derive(Clone, Debug)]
 pub struct ProcessedSpectrum {
-    pub(crate) spectrum: [f32; BIN_SIZE],
+    pub(crate) spectrum: [f32; TOP_K_PEAKS * 2],
     pub(crate) atom_present: [bool; NUMBER_OF_ATOMS],
 }
 
@@ -52,7 +53,7 @@ impl<B: Backend> Batcher<B, ProcessedSpectrum, SpectraBatch<B>> for SpectraBatch
         let spectra = items
             .iter()
             .map(|data| Tensor::<B, 1>::from_floats(data.spectrum, device))
-            .map(|tensor| tensor.reshape([1, BIN_SIZE]))
+            .map(|tensor| tensor.reshape([1, TOP_K_PEAKS * 2]))
             .collect();
 
         let targets = items
@@ -68,6 +69,31 @@ impl<B: Backend> Batcher<B, ProcessedSpectrum, SpectraBatch<B>> for SpectraBatch
     }
 }
 
+// pub fn load_processed_spectra() -> Result<Vec<ProcessedSpectrum>, TrainingError> {
+// let load = pollster::block_on(
+// MGFVec::<f32>::annotated_ms2()
+// .target_directory("data")
+// .load(),
+// )?;
+// let mut output: Vec<ProcessedSpectrum> = Vec::with_capacity(load.spectra().len());
+// for s in load.spectra() {
+// let Some(formula) = s.metadata().formula() else {
+// continue;
+// };
+//
+// output.push(ProcessedSpectrum {
+// spectrum: *s
+// .linear_binned_intensities(0.0, 1000.0, BIN_SIZE)?
+// .as_array::<BIN_SIZE>()
+// .unwrap(),
+// atom_present: *to_binary_vec(formula)?
+// .as_array::<NUMBER_OF_ATOMS>()
+// .unwrap(),
+// });
+// }
+// Ok(output)
+// }
+
 pub fn load_processed_spectra() -> Result<Vec<ProcessedSpectrum>, TrainingError> {
     let load = pollster::block_on(
         MGFVec::<f32>::annotated_ms2()
@@ -80,11 +106,34 @@ pub fn load_processed_spectra() -> Result<Vec<ProcessedSpectrum>, TrainingError>
             continue;
         };
 
+        let mut peaks = s
+            .top_k_peaks(TOP_K_PEAKS)
+            .unwrap()
+            .peaks()
+            .map(|(mz, int)| [mz, int])
+            .collect::<Vec<[f32; 2]>>();
+
+        // normalize the intensities
+        let max_intensity = peaks.iter().map(|&[_mz, int]| int).fold(0.0, f32::max);
+        for peak in peaks.iter_mut() {
+            peak[1] /= max_intensity;
+        }
+
+        if peaks.len() < TOP_K_PEAKS {
+            peaks.resize(TOP_K_PEAKS, [0.0, 0.0]);
+        }
+
+        let peaks = *peaks.as_array::<TOP_K_PEAKS>().unwrap();
+
+        // we flatten the peaks into a single array of size 2*top peaks
+        let mut final_peaks = [0.0; 2 * TOP_K_PEAKS];
+        for (i, [mz, int]) in peaks.iter().enumerate() {
+            final_peaks[2 * i] = *mz;
+            final_peaks[2 * i + 1] = *int;
+        }
+
         output.push(ProcessedSpectrum {
-            spectrum: *s
-                .linear_binned_intensities(0.0, 1000.0, BIN_SIZE)?
-                .as_array::<BIN_SIZE>()
-                .unwrap(),
+            spectrum: final_peaks,
             atom_present: *to_binary_vec(formula)?
                 .as_array::<NUMBER_OF_ATOMS>()
                 .unwrap(),

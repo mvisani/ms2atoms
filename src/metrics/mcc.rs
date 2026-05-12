@@ -1,5 +1,4 @@
 use burn::prelude::*;
-use burn::tensor::Transaction;
 use burn::tensor::activation::sigmoid;
 use burn::train::MultiLabelClassificationOutput;
 use burn::train::metric::Adaptor;
@@ -38,7 +37,7 @@ impl<B: Backend> MatthewsCorrelationMetric<B> {
     }
 
     fn update_name(&mut self) {
-        self.name = Arc::new(format!("MCC @ Threshold({})", self.threshold));
+        self.name = Arc::new(format!("Batch MCC @ Threshold({})", self.threshold));
     }
 
     /// Sets the threshold.
@@ -60,7 +59,7 @@ impl<B: Backend> Default for MatthewsCorrelationMetric<B> {
     /// Creates a new metric instance with default values.
     fn default() -> Self {
         let threshold = 0.5;
-        let name = Arc::new(format!("MCC Score @ Threshold({})", threshold));
+        let name = Arc::new(format!(" Batch MCC Score @ Threshold({})", threshold));
 
         Self {
             name,
@@ -97,13 +96,13 @@ where
 
         let ones = Tensor::<B, 2>::ones_like(&preds_f);
 
-        let tp = (preds_f.clone() * targets_f.clone()).sum_dim(1);
+        let tp = (preds_f.clone() * targets_f.clone()).sum();
 
-        let tn = ((ones.clone() - preds_f.clone()) * (ones.clone() - targets_f.clone())).sum_dim(1);
+        let tn = ((ones.clone() - preds_f.clone()) * (ones.clone() - targets_f.clone())).sum();
 
-        let fp = (preds_f.clone() * (ones.clone() - targets_f.clone())).sum_dim(1);
+        let fp = (preds_f.clone() * (ones.clone() - targets_f.clone())).sum();
 
-        let fn_ = ((ones - preds_f) * targets_f).sum_dim(1);
+        let fn_ = ((ones - preds_f) * targets_f).sum();
 
         let numerator = tp.clone() * tn.clone() - fp.clone() * fn_.clone();
 
@@ -115,12 +114,9 @@ where
 
         let mcc = numerator / denominator.clamp_min(1e-12);
 
-        // Average batch MCC
-        let mcc_value = mcc.mean().into_scalar();
-
         // Update state
         self.state.update(
-            mcc_value.into(),
+            mcc.into_scalar().into(),
             batch_size,
             FormatOptions::new(self.name()).precision(2),
         )

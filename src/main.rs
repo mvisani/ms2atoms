@@ -2,7 +2,7 @@
 
 mod data;
 mod inference;
-mod mcc;
+mod metrics;
 mod model;
 mod training;
 use std::fs::File;
@@ -30,7 +30,7 @@ fn main() -> Result<(), TrainingError> {
     println!("Loading spectra.");
     let dataset = SpectraDataset::new()?;
     println!("Finished loading spectra");
-    let model_config = ModelConfig::new(NUMBER_OF_ATOMS, 256)
+    let model_config = ModelConfig::new(NUMBER_OF_ATOMS, 1024)
         .with_class_weights(Some(dataset.class_weights.clone()));
 
     crate::training::train::<MyAutodiffBackend>(

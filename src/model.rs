@@ -3,7 +3,7 @@ use burn::{
     prelude::*,
 };
 
-use crate::data::BIN_SIZE;
+use crate::data::{BIN_SIZE, TOP_K_PEAKS};
 
 #[derive(Module, Debug)]
 pub struct Model<B: Backend> {
@@ -12,6 +12,8 @@ pub struct Model<B: Backend> {
     linear2: Linear<B>,
     batch_norm2: BatchNorm<B>,
     linear3: Linear<B>,
+    batch_norm3: BatchNorm<B>,
+    linear4: Linear<B>,
     dropout: Dropout,
     inner_activation: Relu,
     pub(crate) activation: Sigmoid,
@@ -22,7 +24,7 @@ pub struct Model<B: Backend> {
 pub struct ModelConfig {
     num_classes: usize,
     hidden_size: usize,
-    #[config(default = "0.5")]
+    #[config(default = "0.2")]
     dropout: f64,
     class_weights: Option<Vec<f32>>,
 }
@@ -34,11 +36,13 @@ impl ModelConfig {
         class_weights: Option<Vec<f32>>,
     ) -> Model<B> {
         Model {
-            linear1: LinearConfig::new(BIN_SIZE, self.hidden_size).init(device),
+            linear1: LinearConfig::new(2 * TOP_K_PEAKS, self.hidden_size).init(device),
             batch_norm1: BatchNormConfig::new(self.hidden_size).init(device),
             linear2: LinearConfig::new(self.hidden_size, self.hidden_size / 2).init(device),
             batch_norm2: BatchNormConfig::new(self.hidden_size / 2).init(device),
-            linear3: LinearConfig::new(self.hidden_size / 2, self.num_classes).init(device),
+            linear3: LinearConfig::new(self.hidden_size / 2, self.hidden_size / 4).init(device),
+            batch_norm3: BatchNormConfig::new(self.hidden_size / 4).init(device),
+            linear4: LinearConfig::new(self.hidden_size / 4, self.num_classes).init(device),
             dropout: DropoutConfig::new(self.dropout).init(),
             activation: Sigmoid::new(),
             inner_activation: Relu::new(),
@@ -68,6 +72,10 @@ impl<B: Backend> Model<B> {
         let x = self.dropout.forward(x);
         let x = self.batch_norm2.forward(x);
         let x = self.linear3.forward(x);
+        let x = self.inner_activation.forward(x);
+        let x = self.dropout.forward(x);
+        let x = self.batch_norm3.forward(x);
+        let x = self.linear4.forward(x);
         x
     }
 

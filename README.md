@@ -24,3 +24,24 @@
 - [ ] Metrics : mean MCC for all classes
 - [ ] Stratified holdout 
 - [ ] Use Terminal user interface of Burn
+
+
+
+## Train/test split
+Get the frequency of each atom.
+
+find
+
+Vec of vec. Outter vec is long number of atoms. Inner vector contain the index of the spectrum that contains the atom.
+
+
+[
+    C: [0,1,2,3,4,5,6],
+    Fe: [17, 18,19]
+]
+
+So the index of a spectrum can only appear once in the whole vec of vec. Then we take the rarest atom and split 80/20 on 
+the spectra it conatins. We do this for each atom.
+
+assign rarest atom for each molecule. Split the dataset 
+we get a list for each atom, all molecules that contain it. 

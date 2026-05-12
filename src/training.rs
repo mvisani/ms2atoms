@@ -1,6 +1,6 @@
 use crate::data::{SpectraBatch, SpectraBatcher};
 use crate::dataset::SpectraDataset;
-use crate::mcc::MatthewsCorrelationMetric;
+use crate::metrics::mcc::MatthewsCorrelationMetric;
 use crate::model::{Model, ModelConfig};
 use burn::data::dataloader::DataLoaderBuilder;
 use burn::nn::loss::BinaryCrossEntropyLossConfig;
@@ -8,10 +8,11 @@ use burn::optim::AdamConfig;
 use burn::prelude::*;
 use burn::record::CompactRecorder;
 use burn::tensor::backend::AutodiffBackend;
+use burn::train::metric::store::{Aggregate, Direction, Split};
 use burn::train::metric::{HammingScore, LossMetric};
 use burn::train::{
-    InferenceStep, Learner, MultiLabelClassificationOutput, SupervisedTraining, TrainOutput,
-    TrainStep,
+    InferenceStep, Learner, MetricEarlyStoppingStrategy, MultiLabelClassificationOutput,
+    StoppingCondition, SupervisedTraining, TrainOutput, TrainStep,
 };
 
 impl<B: Backend> Model<B> {
@@ -21,16 +22,17 @@ impl<B: Backend> Model<B> {
         targets: Tensor<B, 2, Int>,
     ) -> MultiLabelClassificationOutput<B> {
         let logits = self.forward_logit(spectra);
+        let outputs = self.activation.forward(logits.clone());
         let loss_bce = BinaryCrossEntropyLossConfig::new()
             .with_logits(true)
             .with_weights(self.class_weights())
             .init(&logits.device())
             .forward(logits.clone(), targets.clone());
 
-        let lambda = 1e-4;
+        let lambda = 1e-3;
         let logit_reg = logits.clone().powf_scalar(2.0).mean();
         let loss = loss_bce + logit_reg * lambda;
-        MultiLabelClassificationOutput::new(loss, self.activation.forward(logits), targets)
+        MultiLabelClassificationOutput::new(loss, outputs, targets)
     }
 }
 
@@ -55,7 +57,7 @@ impl<B: Backend> InferenceStep for Model<B> {
 pub struct TrainingConfig {
     pub model: ModelConfig,
     pub optimizer: AdamConfig,
-    #[config(default = 10)]
+    #[config(default = 5)]
     pub num_epochs: usize,
     #[config(default = 64)]
     pub batch_size: usize,
@@ -102,10 +104,18 @@ pub fn train<B: AutodiffBackend>(
     let training = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
         .metrics((
             MatthewsCorrelationMetric::new(),
+            // MaxLogit::new(),
             LossMetric::new(),
             HammingScore::new(),
         ))
         .with_file_checkpointer(CompactRecorder::new())
+        .early_stopping(MetricEarlyStoppingStrategy::new(
+            &LossMetric::<B>::new(),
+            Aggregate::Mean,
+            Direction::Lowest,
+            Split::Valid,
+            StoppingCondition::NoImprovementSince { n_epochs: 2 },
+        ))
         .num_epochs(config.num_epochs)
         .summary();
 
